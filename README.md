@@ -60,6 +60,39 @@ the supplied configuration lists Cypress devices, not every board using FX3.
 An SDR running its own firmware may therefore be absent from the device list.
 Do not add its ID while another application is using it.
 
+### Add a device to the per-user configuration
+
+Close UHD and any other application using the device, then check its current
+vendor and product IDs with `lsusb`. For example, a B210 running its firmware
+can appear as `2500:0020`, rather than a Cypress bootloader ID.
+
+From the repository root, create a per-user configuration if none exists:
+
+```bash
+mkdir -p ~/.config/cyusb
+if [ ! -e ~/.config/cyusb/cyusb.conf ]; then
+    cp configs/cyusb.conf ~/.config/cyusb/cyusb.conf
+fi
+nano ~/.config/cyusb/cyusb.conf
+```
+
+Add the matching hexadecimal IDs inside the existing `<VPD>` block, before
+`</VPD>`, retaining the other entries. For the B210 example:
+
+```text
+2500    0020    USRP B210
+```
+
+Save the file and restart `./bin/cyusb` in normal mode, without
+`--gui-smoke-test`. The per-user file replaces the global configuration for
+that user; it does not modify `/etc/cyusb.conf`. If the list remains empty,
+check the terminal output for access errors and verify that the current USB
+ID still matches the entry. Device permissions remain a separate requirement.
+
+Adding an ID only makes the device eligible to be opened. It does not make
+its firmware compatible with Cypress example vendor commands. Avoid reset,
+programming, and arbitrary transfers until the device protocol is verified.
+
 ## Legacy installation instructions
 
 Pre-requisites:
