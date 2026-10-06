@@ -93,6 +93,7 @@ compile_commands.json
 # End of https://www.gitignore.io/api/qt,c++,visualstudiocode
 
 bin/*
+artifacts/
 install
 *.deb
 description-pak

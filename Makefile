@@ -1,3 +1,5 @@
+QMAKE ?= qmake
+
 help:
 	@echo	'make all	build the library and gui'
 	@echo	'make lib	build the library'
@@ -16,7 +18,7 @@ lib:
 
 .PHONY: gui
 gui:
-	cd gui_src && qmake && make
+	cd gui_src && $(QMAKE) && $(MAKE)
 
 .PHONY: cli
 cli:

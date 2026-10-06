@@ -1,8 +1,66 @@
 
                     Cypress Semiconductor Corporation
                    CyUSB Suite For Linux, version 1.0.5
-                       Updated by Ho-Ro to use Qt5
+                 Based on Ho-Ro's Qt5 update, with Qt6 support
                    ====================================
+
+## Build and run locally
+
+This fork supports Qt 5 and Qt 6. The fixed-size GUI uses logical-pixel fonts
+to avoid the observed text clipping on Wayland with 150% display scaling.
+
+On Ubuntu, install the Qt 6 build dependencies:
+
+```bash
+sudo apt install build-essential libusb-1.0-0-dev qt6-base-dev qt6-base-dev-tools qmake6 qt6-wayland
+```
+
+Clone the development branch and build from the repository root:
+
+```bash
+git clone --branch codex/qt6-gui https://github.com/electro-logic/cyusb_linux.git
+cd cyusb_linux
+make lib
+make gui QMAKE=qmake6
+./bin/cyusb
+```
+
+Normal launch enumerates and opens configured USB devices and can detach their
+kernel drivers. Close UHD and other applications using the device first.
+Do not use firmware programming or reset controls on hardware that is in use.
+Local builds load the library from the checkout; no system-wide installation
+or `sudo` launch is needed, provided your USB device permissions allow access.
+
+For Qt 5, install `qtbase5-dev` and `qt5-qmake`, then use
+`make gui QMAKE=qmake` instead. Re-run qmake when switching Qt versions.
+
+## GUI tests without USB access
+
+The smoke test constructs the GUI without enumerating or opening USB devices,
+prints a result, and exits automatically after about 250 ms:
+
+```bash
+./bin/cyusb --gui-smoke-test
+QT_QPA_PLATFORM=offscreen QT_SCALE_FACTOR=1.5 ./bin/cyusb --gui-smoke-test
+./bin/cyusb --gui-smoke-test --gui-screenshot /tmp/cyusb-gui.png
+```
+
+The screenshot option also writes one image per main tab beside the requested
+image. It requires `--gui-smoke-test`. Qt 5.15.18 and Qt 6.10.2 builds and GUI
+smoke tests passed; the Qt 6 GUI was checked on native Wayland at 150% scaling.
+USB transfers, firmware programming, and hotplug have not yet been validated
+for this port. The GUI retains the upstream fixed layout rather than a
+responsive layout.
+
+## Device configuration
+
+The library reads `~/.config/cyusb/cyusb.conf` when present, otherwise
+`/etc/cyusb.conf`. These files select the USB vendor and product IDs to open;
+the supplied configuration lists Cypress devices, not every board using FX3.
+An SDR running its own firmware may therefore be absent from the device list.
+Do not add its ID while another application is using it.
+
+## Legacy installation instructions
 
 Pre-requisites:
 ---------------
@@ -12,7 +70,7 @@ Pre-requisites:
  2. Native gcc/g++ tool-chain and the GNU make utility are required for
     compiling the library and application.
 
- 3. Qt5 development packages are required for building the cyusb GUI application.
+ 3. Qt5 or Qt6 development packages are required for building the cyusb GUI application.
 
  4. If you want to build a Debian package you need also the packages
     'checkinstall' and 'fakeroot'.

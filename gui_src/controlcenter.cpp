@@ -16,7 +16,8 @@ ControlCenter::ControlCenter(QWidget *parent) : QWidget(parent)
 	   qFatal("Couldn't create SIGUSR1 socketpair");
 
 	sn_sigusr1 = new QSocketNotifier(sigusr1_fd[1], QSocketNotifier::Read, this);
-	connect(sn_sigusr1, SIGNAL(activated(int)), this, SLOT(sigusr1_handler()));
+	connect(sn_sigusr1, &QSocketNotifier::activated, this,
+	        [this]() { sigusr1_handler(); });
 
 	QStringList list;
 	list.clear();

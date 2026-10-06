@@ -36,8 +36,7 @@ libusb_device  *dev = nullptr;
 int num_devices_detected;
 int current_device_index = -1;
 
-static QLocalServer server(0);
-static QTime *isoc_time;
+static QElapsedTimer *isoc_time;
 
 
 extern int sigusr1_fd[2];
@@ -1150,8 +1149,8 @@ void ControlCenter::on_le3_out_hex_textEdited()
 	char tbuf[5];
 	unsigned int sz;
 
-	QRegExp rx("[0-9A-Fa-f]*");
-	QValidator *validator = new QRegExpValidator(rx, this);
+	QRegularExpression rx("[0-9A-Fa-f]*");
+	QValidator *validator = new QRegularExpressionValidator(rx, this);
 	mainwin->le3_out_hex->setValidator(validator);
 
 	QByteArray t = mainwin->le3_out_hex->text().toLatin1();
@@ -1285,8 +1284,8 @@ void ControlCenter::on_le6_out_hex_textEdited()
 	char tbuf[5];
 	unsigned int sz;
 
-	QRegExp rx("[0-9A-Fa-f]*");
-	QValidator *validator = new QRegExpValidator(rx, this);
+	QRegularExpression rx("[0-9A-Fa-f]*");
+	QValidator *validator = new QRegularExpressionValidator(rx, this);
 	mainwin->le6_out_hex->setValidator(validator);
 
 	QByteArray t = mainwin->le6_out_hex->text().toLatin1();
@@ -2001,7 +2000,7 @@ void ControlCenter::on_pb7_rcv_clicked()
 	libusb_set_iso_packet_lengths(transfer, pktsize_in);
 	transfer->flags = LIBUSB_TRANSFER_FREE_BUFFER | LIBUSB_TRANSFER_FREE_TRANSFER;
 
-	isoc_time = new QTime();
+	isoc_time = new QElapsedTimer();
 	isoc_time->start();
 
 	r = libusb_submit_transfer(transfer);
@@ -2062,7 +2061,7 @@ void ControlCenter::on_pb7_send_clicked()
 	libusb_set_iso_packet_lengths(transfer, pktsize_out);
 	transfer->flags = LIBUSB_TRANSFER_FREE_BUFFER | LIBUSB_TRANSFER_FREE_TRANSFER;
 
-	isoc_time = new QTime();
+	isoc_time = new QElapsedTimer();
 	isoc_time->start();
 
 	r = libusb_submit_transfer(transfer);
@@ -2108,7 +2107,7 @@ void ControlCenter::on_rb7_disable_clicked()
 	mainwin->lw7_in->setEnabled(false);
 }
 
-static int multiple_instances()
+static int multiple_instances(QLocalServer &server)
 {
 
 	if ( server.listen("/dev/shm/cyusb") ) {
@@ -2137,14 +2136,27 @@ void ControlCenter::about()
 int main(int argc, char **argv)
 {
 	QApplication app(argc, argv);
+	// Use logical pixels to match the legacy fixed geometry independently
+	// of desktop font DPI. Qt still applies the display's device pixel ratio.
+	QFont form_font = app.font();
+	form_font.setPixelSize(12);
+	app.setFont(form_font);
+	QLocalServer server;
+	const bool gui_smoke = app.arguments().contains("--gui-smoke-test");
+	const int screenshot_arg = app.arguments().indexOf("--gui-screenshot");
+	if (screenshot_arg >= 0 && (!gui_smoke || screenshot_arg + 1 >= app.arguments().size())) {
+		fprintf(stderr, "--gui-screenshot PATH requires --gui-smoke-test\n");
+		return 2;
+	}
 //    QApplication::setStyle( "Fusion" );
     app.setStyle("Fusion");
-	if ( multiple_instances() ) {
+	if ( !gui_smoke && multiple_instances(server) ) {
 		printf("Application already running ? If NOT, manually delete socket file /dev/shm/cyusb and restart\n");
 		return -1;
 	}
 
-	int r = cyusb_open();
+	// GUI-only qualification never enumerates or opens USB devices.
+	int r = gui_smoke ? 0 : cyusb_open();
 	if ( r < 0 ) {
 		printf("Error opening library\n");
 		return -1;
@@ -2154,15 +2166,22 @@ int main(int argc, char **argv)
 	}
 	else num_devices_detected = r;
 
-	signal(SIGUSR1, setup_handler);
+	if (!gui_smoke) signal(SIGUSR1, setup_handler);
 
 	mainwin = new ControlCenter;
+	// Designer supplies family-only fonts and one explicit point size.
+	// Normalize their size without losing the monospaced data displays.
+	const auto form_widgets = mainwin->findChildren<QWidget *>();
+	for (QWidget *widget : form_widgets) {
+		QFont font = widget->font();
+		font.setPixelSize(12);
+		widget->setFont(font);
+	}
 	QMainWindow *mw = new QMainWindow(nullptr);
 	mw->setCentralWidget(mainwin);
 	QIcon *qic = new QIcon(":/cypress_60x60.png");
 	app.setWindowIcon(*qic);
 	set_tool_tips();
-	mw->setFixedSize(880, 660);
 
 	update_devlist();
 
@@ -2178,12 +2197,38 @@ int main(int argc, char **argv)
 	QMenuBar *menuBar = new QMenuBar(mw);
 	menuBar->addMenu(fileMenu);
 	menuBar->addMenu(helpMenu);
+	mw->setMenuBar(menuBar);
+	// Match the form's minimum size and reserve space for window chrome.
+	mw->setFixedSize(mainwin->minimumSize() + QSize(0,
+	    menuBar->sizeHint().height() + sb->sizeHint().height()));
 	QObject::connect(exitAct, SIGNAL(triggered()), mainwin, SLOT(appExit()));
 	QObject::connect(aboutAct,SIGNAL(triggered()), mainwin, SLOT(about()));
 
 	mw->show();
 
 	sb->showMessage("Starting Application...",2000);
+	if (gui_smoke) {
+		QTimer::singleShot(250, &app, [&]() {
+			if (screenshot_arg >= 0 && !mw->grab().save(app.arguments().at(screenshot_arg + 1))) {
+				fprintf(stderr, "GUI screenshot could not be saved\n");
+				app.exit(2);
+				return;
+			}
+			if (screenshot_arg >= 0) {
+				const QString path = app.arguments().at(screenshot_arg + 1);
+				for (int tab = 0; tab < mainwin->tab1->count(); ++tab) {
+					mainwin->tab1->setCurrentIndex(tab);
+					if (!mw->grab().save(path + QString(".tab%1.png").arg(tab))) {
+						fprintf(stderr, "GUI tab screenshot could not be saved\n");
+						app.exit(2);
+						return;
+					}
+				}
+			}
+			printf("GUI smoke test passed: window constructed, USB disabled, Qt %s\n", qVersion());
+			app.quit();
+		});
+	}
 
 	return app.exec();
 }
